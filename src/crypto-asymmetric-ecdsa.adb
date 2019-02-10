@@ -20,24 +20,19 @@
 -- exception does not however invalidate any other reasons why the
 -- executable file might be covered by the GNU Public License.
 
-with Crypto.Symmetric.Hashfunction_SHA1; 
+with Crypto.Symmetric.Hashfunction_SHA1;
 
 package body Crypto.Asymmetric.ECDSA is
    package SHA1 renames Crypto.Symmetric.Hashfunction_SHA1;
    use Big.Mod_Utils;
    use Big.Utils;
 
-
-
 -------------------------------------------------------------------------------
 
    -- check if key is initialited
    function Is_Init(Key : ECDSA_P_KEY) return Boolean is
    begin
-      if Key.n /= Big_Unsigned_Zero then
-         return True;
-      else return False;
-      end if;
+      return Key.n /= Big_Unsigned_Zero;
    end Is_Init; Pragma Inline (Is_Init);
 
 -------------------------------------------------------------------------------
@@ -45,64 +40,60 @@ package body Crypto.Asymmetric.ECDSA is
    -- check if key is initialited
    function Is_Init(Key : ECDSA_S_KEY) return Boolean is
    begin
-      if Key.d /= Big_Unsigned_Zero then
-			return True;
-      else return False;
-      end if;
+      return Key.d /= Big_Unsigned_Zero;
    end Is_Init; Pragma Inline (Is_Init);
 
 -------------------------------------------------------------------------------
 
-   procedure Gen_Public_Key(
-			    Public_Key  : out Public_Key_ECDSA;
-			    length      : in DB.Bit_Length) is
+   procedure Gen_Public_Key(Public_Key  :    out Public_Key_ECDSA;
+			                Length      : in     DB.Bit_Length) is
+
    begin
-      Get_Elliptic_Curve(Public_Key.E, Public_Key.P, Public_Key.n, length);
-      init(Public_Key.E);
+      Get_Elliptic_Curve(Public_Key.E, Public_Key.P, Public_Key.n, Length);
+      Init(Public_Key.E);
    end Gen_Public_Key;
-   
-   ----------------------------------------------------------------------------
-   
-   procedure Gen_Private_Key(
-			     Public_Key  : in out Public_Key_ECDSA;
-			     Private_Key : out Private_Key_ECDSA) is
-   begin
-      Private_Key.d := Get_Random(Get_P(Public_Key.E) - Big_Unsigned_Three)
-	+ Big_Unsigned_One;
-      
-      Private_Key.Q 	:= Private_Key.d * Public_Key.P;
-      Public_Key.Q 	:= Private_Key.Q;
-   end Gen_Private_Key;
-   
+
    ----------------------------------------------------------------------------
 
-   procedure Sign(Public_Key  : in  Public_Key_ECDSA;
-		  Private_Key : in  Private_Key_ECDSA;
-                  SHA1_Hash   : in  W_Block160;
-                  Signature   : out Signature_ECDSA) is
-      temp_k : Big_Unsigned;
-      temp_EC: EC_Point;
-      temp_H : constant Big_Unsigned := To_Big_Unsigned(To_Bytes(Sha1_Hash));
+   procedure Gen_Private_Key(Public_Key  : in out Public_Key_ECDSA;
+			                 Private_Key :    out Private_Key_ECDSA) is
    begin
+      Private_Key.d := Get_Random(Get_P(Public_Key.E) - Big_Unsigned_Three)
+	                    + Big_Unsigned_One;
+
+      Private_Key.Q := Private_Key.d * Public_Key.P;
+      Public_Key.Q 	:= Private_Key.Q;
+   end Gen_Private_Key;
+
+   ----------------------------------------------------------------------------
+
+   procedure Sign(Public_Key  : in     Public_Key_ECDSA;
+                  Private_Key : in     Private_Key_ECDSA;
+                  SHA1_Hash   : in     W_Block160;
+                  Signature   :    out Signature_ECDSA) is
+      temp_k  : Big_Unsigned;
+      temp_EC : EC_Point;
+      temp_H  : constant Big_Unsigned := To_Big_Unsigned(To_Bytes(Sha1_Hash));
+   begin
+      Signature_Loop:
       loop
-	 temp_k := Get_Random(Get_P(Public_Key.E) - Big_Unsigned_Three) +
-	   Big_Unsigned_One;
-	 
-	 temp_EC:= temp_k * Public_Key.P;
-	 Signature.R := temp_EC.X mod Public_Key.n;
-	 if Signature.R /= Big_Unsigned_Zero then
-	    exit;
-	 end if;
-      end loop;
-      
+         temp_k := Get_Random(Get_P(Public_Key.E) - Big_Unsigned_Three) +
+           Big_Unsigned_One;
+
+         temp_EC     := temp_k * Public_Key.P;
+         Signature.R := temp_EC.X mod Public_Key.n;
+
+         exit Signature_Loop when Signature.R /= Big_Unsigned_Zero;
+      end loop Signature_Loop;
+
       Signature.S := Mult(Inverse(temp_k, Public_Key.n),
-			  Add(temp_H, Mult(Private_Key.d, Signature.R, 
-					   Public_Key.n),Public_Key.n),
-			  Public_Key.n);
+                          Add(temp_H, Mult(Private_Key.d, Signature.R,
+                            Public_Key.n),Public_Key.n),
+                          Public_Key.n);
    end Sign;
 
 -------------------------------------------------------------------------------
-   
+
    function Verify(Public_Key  : Public_Key_ECDSA;
                    SHA1_Hash   : W_Block160;
                    Signature   : Signature_ECDSA) return Boolean is
@@ -113,20 +104,19 @@ package body Crypto.Asymmetric.ECDSA is
       tmp_EC: constant EC_Point := (U1 * Public_Key.P) + (U2 * Public_Key.Q);
       V : constant Big_Unsigned:= tmp_EC.x mod Get_P(Public_Key.E);
    begin
-      if V = Signature.R then return True;
-      else return False;
-      end if;
+      return V = Signature.R;
    end Verify;
-   
+
 -------------------------------------------------------------------------------
 
-   procedure Sign_File(Filename    : in  String;
-                       Public_Key  : in Public_Key_ECDSA;
-		       Private_Key : in  Private_Key_ECDSA;
-                       Signature   : out Signature_ECDSA) is
+   procedure Sign_File(Filename    : in     String;
+                       Public_Key  : in     Public_Key_ECDSA;
+                       Private_Key : in     Private_Key_ECDSA;
+                       Signature   :    out Signature_ECDSA) is
    begin
-      if Is_Init(ECDSA_S_Key(Private_Key)) and 
-	Is_Init(ECDSA_P_Key(Public_Key)) then
+
+      if Is_Init(ECDSA_S_Key(Private_Key)) and
+         Is_Init(ECDSA_P_Key(Public_Key)) then
          Sign(Public_Key, Private_Key, SHA1.F_Hash(Filename), Signature);
       else
          raise Invalid_Private_Key_Error;
@@ -135,47 +125,36 @@ package body Crypto.Asymmetric.ECDSA is
 
 -------------------------------------------------------------------------------
 
-   function Verify_File(
-                        Filename   : String;
+   function Verify_File(Filename   : String;
                         Public_Key : Public_Key_ECDSA;
                         Signature  : Signature_ECDSA) return Boolean is
+
    begin
-      if Is_Init(ECDSA_P_Key(Public_Key)) then
-         return Verify(Public_Key, SHA1.F_Hash(Filename), Signature);
-      else
-         raise Invalid_Public_Key_Error;
-      end if;
+      return
+        (if Is_Init(ECDSA_P_Key(Public_Key))then Verify(Public_Key, SHA1.F_Hash(Filename), Signature)
+         else raise Invalid_Public_Key_Error);
    end Verify_File;
 
 
 -------------------------------------------------------------------------------
 
-   function Verify_Key_Pair(
-                            Private_Key : Private_Key_ECDSA;
+   function Verify_Key_Pair(Private_Key : Private_Key_ECDSA;
                             Public_Key  : Public_Key_ECDSA) return Boolean is
+
    begin
-      if Is_Init(ECDSA_P_KEY(Public_Key)) = False or
-        Is_Init(ECDSA_S_KEY(Private_Key)) = False then
-         return False;
-      elsif
+      return (Is_Init(ECDSA_P_KEY(Public_Key)) or
+              Is_Init(ECDSA_S_KEY(Private_Key))) AND THEN
 			--- do some more? ---
-        	(Private_Key.d * Public_Key.P = Public_Key.Q) and (Public_Key.Q = Private_Key.Q) then
-         return True;
-      else return False;
-      end if;
+        	((Private_Key.d * Public_Key.P = Public_Key.Q) and (Public_Key.Q = Private_Key.Q));
    end Verify_Key_Pair;
 
 -------------------------------------------------------------------------------
 
-	function equal_Public_Key_Curve(
- 						Public_Key_A  : Public_Key_ECDSA;
-						Public_Key_B  : Public_Key_ECDSA) return Boolean is
+	function Equal_Public_Key_Curve(Public_Key_A  : Public_Key_ECDSA;
+						            Public_Key_B  : Public_Key_ECDSA) return Boolean is
+
 	begin
-		if (Public_Key_A.E = Public_Key_B.E) and (Public_Key_A.P = Public_Key_B.P) and (Public_Key_A.n = Public_Key_B.n) then
-			return true;
-		else
-			return false;
-		end if;
+		return (Public_Key_A.E = Public_Key_B.E) and (Public_Key_A.P = Public_Key_B.P) and (Public_Key_A.n = Public_Key_B.n);
 	end equal_Public_Key_Curve;
 
 -------------------------------------------------------------------------------
